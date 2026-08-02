@@ -1,0 +1,30 @@
+tag,desc,kind
+AHU1_SF_RUN,급기팬 운전상태,bool
+AHU1_SF_ALM,급기팬 고장,bool
+AHU1_RF_RUN,환기팬 운전상태,bool
+AHU1_SA_TEMP,급기온도,float
+AHU1_RA_TEMP,환기온도,float
+AHU1_OA_DMP,외기댐퍼 개도,float
+AHU1_CHW_VLV,냉수밸브 개도,float
+AHU1_FLT_ALM,필터 차압경보,bool
+AHU-2 SF RUN,급기팬 운전,bool
+AHU-2 SA T,급기온도,float
+AHU-2 SA RH,급기습도,float
+AHU-2 CHW VLV POS,냉수밸브개도,float
+AHU-2 OA DMP POS,외기댐퍼개도,float
+AHU-2 트립,팬 트립,bool
+CH1_RUN,냉동기 운전,bool
+CH1_CHWS_TEMP,냉수 공급온도,float
+CH1_CHWR_TEMP,냉수 환수온도,float
+CH1_KW,소비전력,float
+CH1_FAULT,냉동기 고장,bool
+CH1_FLOW,냉수 유량,float
+펌프1 운전,냉수펌프 운전상태,bool
+펌프1 고장,냉수펌프 고장,bool
+PUMP-1 압력,토출압력,float
+TANK-1 수위,축열조 수위,float
+TANK-1 LOW ALM,저수위 경보,bool
+EF-3 RUN,주차장 배기팬 운전,bool
+EF-3 STS,배기팬 상태,bool
+OA_TEMP,외기온도,float
+OA_RH,외기습도,float

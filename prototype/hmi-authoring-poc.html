@@ -59,6 +59,13 @@
   table.tags td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
   table.tags td:last-child { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .hint { color: var(--dim); font-size: 11px; margin-top: 10px; line-height: 1.6; }
+  .chip {
+    font-size: 11px; padding: 3px 9px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel2);
+  }
+  .chip.off  { color: var(--dim); }
+  .chip.live { color: #0d1117; background: #3ddc84; border-color: #3ddc84; font-weight: 600; }
+  .chip.down { color: #0d1117; background: #ff5f56; border-color: #ff5f56; font-weight: 600; }
   @keyframes spin { to { transform: rotate(360deg); } }
   /* SVG에서 transform-origin의 기본 기준은 뷰포트(view-box)라 심볼이 화면 밖으로 튄다.
      fill-box를 지정해야 심볼 자기 자신의 중심을 축으로 돈다. */
@@ -77,6 +84,7 @@
   <button id="btnDemo">샘플 화면</button>
   <button id="btnClear">전체 삭제</button>
   <span style="flex:1"></span>
+  <span id="link" class="chip off">모의 데이터</span>
   <span id="status" class="hint" style="margin:0"></span>
 </header>
 
@@ -388,6 +396,7 @@ function render() {
   }
   paint();
   drawSel();
+  syncSubscription();   // 화면이 바뀌면 구독도 바뀐다
 }
 
 /** 런타임 값을 화면에 반영. 편집 모드에서는 중립값으로 미리보기. */
@@ -533,13 +542,15 @@ function showProps() {
  * ------------------------------------------------------------------ */
 function tick() {
   if (!runtime) return;
-  for (const name of TAG_NAMES) {
+  if (live) return;          // 브리지에 붙어 있으면 모의 데이터를 만들지 않는다
+  for (const name of Object.keys(TAGS)) {
     const t = TAGS[name];
     if (t.kind === "bool") {
       if (Math.random() < 0.04) t.v = t.v ? 0 : 1;
     } else {
-      const span = t.hi - t.lo;
-      t.v = Math.max(t.lo, Math.min(t.hi, t.v + (Math.random() - 0.5) * span * 0.06));
+      const span = (t.hi ?? 100) - (t.lo ?? 0);
+      t.v = Math.max(t.lo ?? 0, Math.min(t.hi ?? 100,
+            t.v + (Math.random() - 0.5) * span * 0.06));
     }
   }
   paint();
@@ -547,15 +558,100 @@ function tick() {
 }
 
 function showTags() {
-  document.getElementById("tagTable").innerHTML = TAG_NAMES.map(n => {
+  document.getElementById("tagTable").innerHTML = Object.keys(TAGS).map(n => {
     const t = TAGS[n];
-    const v = t.kind === "bool" ? (t.v ? "ON" : "OFF") : t.v.toFixed(1);
+    const v = t.kind === "bool" ? (t.v ? "ON" : "OFF") : Number(t.v).toFixed(1);
     const c = t.kind === "bool" ? (t.v ? "#3ddc84" : "#97a1b0") : "#e6eaf0";
-    return `<tr><td class="tag">${n}</td><td style="color:${c}">${v}</td></tr>`;
+    const stale = t.stale ? ' style="opacity:.4"' : "";
+    return `<tr${stale}><td class="tag">${n}</td><td style="color:${c}">${v}</td></tr>`;
   }).join("");
 }
 
 setInterval(tick, 500);
+
+/* ------------------------------------------------------------------ *
+ * 6b. 브리지 연결 — ?ws=ws://host:8765 를 붙이면 실 데이터로 전환된다.
+ *
+ * 브라우저는 raw TCP 를 못 열기 때문에 장비에 직접 붙을 수 없다.
+ * tools/point_bridge.py 가 장비(TCP) ↔ 화면(WebSocket) 을 중계한다.
+ * ------------------------------------------------------------------ */
+const WS_URL = new URLSearchParams(location.search).get("ws");
+let ws = null;
+let live = false;
+let backoff = 1000;
+let subscribed = "";
+
+function setLink(cls, text) {
+  const chip = document.getElementById("link");
+  chip.className = "chip " + cls;
+  chip.textContent = text;
+}
+
+/** 현재 화면이 실제로 쓰는 태그만 구독한다. 화면이 바뀌면 교체된다. */
+function syncSubscription() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const tags = [...new Set(scene.nodes.map(n => n.tag).filter(Boolean))].sort();
+  const key = tags.join(",");
+  if (key === subscribed) return;          // 같은 구독을 반복해서 보내지 않는다
+  subscribed = key;
+  ws.send(JSON.stringify({ op: "subscribe", tags }));
+  setStatus(`구독 ${tags.length}개`);
+}
+
+function connect() {
+  if (!WS_URL) return;
+  setLink("off", "연결 중…");
+  try { ws = new WebSocket(WS_URL); }
+  catch (e) { scheduleReconnect(); return; }
+
+  ws.onopen = () => {
+    live = true;
+    backoff = 1000;
+    subscribed = "";
+    setLink("live", "실 데이터");
+    syncSubscription();
+  };
+
+  ws.onmessage = ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+
+    if (msg.op === "hello") {
+      // 브리지가 알려준 포인트 목록으로 태그 테이블을 채운다.
+      for (const [tag, kind] of Object.entries(msg.points || {})) {
+        if (!TAGS[tag]) TAGS[tag] = { v: 0, kind };
+      }
+      setStatus(`브리지 연결 — 드라이버 ${msg.driver}, 주기 ${msg.interval}s`);
+      showTags();
+
+    } else if (msg.op === "values") {
+      // 변경분만 온다. 없는 태그는 그대로 유지된다.
+      for (const [tag, v] of Object.entries(msg.data || {})) {
+        if (!TAGS[tag]) TAGS[tag] = { v, kind: typeof v === "boolean" ? "bool" : "float" };
+        TAGS[tag].v = typeof v === "boolean" ? (v ? 1 : 0) : v;
+        TAGS[tag].stale = false;
+      }
+      paint();
+      showTags();
+
+    } else if (msg.op === "error") {
+      setStatus("브리지 오류: " + msg.message);
+    }
+  };
+
+  ws.onclose = () => { live = false; setLink("down", "연결 끊김"); scheduleReconnect(); };
+  ws.onerror = () => { try { ws.close(); } catch {} };
+}
+
+/** 지수 백오프 재연결. 현장에서 브리지 재기동·망 순단은 일상이다. */
+function scheduleReconnect() {
+  for (const t of Object.values(TAGS)) t.stale = true;
+  showTags();
+  setTimeout(connect, backoff);
+  backoff = Math.min(backoff * 2, 15000);
+}
+
+connect();
 
 /* ------------------------------------------------------------------ *
  * 7. 툴바

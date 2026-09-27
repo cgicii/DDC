@@ -130,7 +130,19 @@ sudo apt-get update && sudo apt-get upgrade
 
 비번을 잊어 로그인할 수 없을 때, 재설치하지 말고 SD 카드의 `/etc/shadow` 에서 해당 사용자 비번만 초기화한다. `tools/jetson/reset_password.sh` 가 마운트된 루트 파일시스템을 대상으로 이 작업을 안전하게(백업 후) 처리한다.
 
-### Windows 11 + WSL2 로 카드를 열어 초기화
+### Windows 11 — 원스톱 (권장)
+
+`tools/jetson/reset_password_wsl.ps1` 이 카드 자동 탐지 → WSL2 마운트(루트 파티션 자동 탐색) → 초기화 → 마운트 해제를 명령 한 줄로 처리한다. WSL2 가 설치돼 있어야 한다(`wsl --install`).
+
+```powershell
+# 관리자 PowerShell, 저장소의 tools\jetson 폴더에서
+.\reset_password_wsl.ps1 -ListUsers                      # 카드의 사용자 확인
+.\reset_password_wsl.ps1 -Username nvidia -NewPassword '새비번'
+```
+
+작업 후 카드를 빼서 Jetson 에 다시 꽂고 부팅한다. 카드가 여러 개면 `-DiskNumber <번호>` 로 지정한다.
+
+### Windows 11 — 수동 (WSL2 직접)
 
 Jetson 의 SD 카드는 ext4 라 Windows 탐색기에는 드라이브 문자가 안 붙는다(정상). WSL2 로 마운트한다.
 

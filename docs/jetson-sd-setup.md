@@ -126,6 +126,52 @@ JetPack 6.2.2 로 올리려면(6.2.1 이미지에서 부팅한 경우):
 sudo apt-get update && sudo apt-get upgrade
 ```
 
+## 비밀번호 초기화 (재설치 없이)
+
+비번을 잊어 로그인할 수 없을 때, 재설치하지 말고 SD 카드의 `/etc/shadow` 에서 해당 사용자 비번만 초기화한다. `tools/jetson/reset_password.sh` 가 마운트된 루트 파일시스템을 대상으로 이 작업을 안전하게(백업 후) 처리한다.
+
+### Windows 11 + WSL2 로 카드를 열어 초기화
+
+Jetson 의 SD 카드는 ext4 라 Windows 탐색기에는 드라이브 문자가 안 붙는다(정상). WSL2 로 마운트한다.
+
+```powershell
+# 관리자 PowerShell — 카드 디스크 번호 확인
+Get-Disk | Format-Table Number,FriendlyName,@{N='GB';E={[int]($_.Size/1GB)}},BusType
+
+# 루트(APP) 파티션은 보통 partition 1. 예: 디스크 2번
+wsl --mount \\.\PHYSICALDRIVE2 --partition 1 --type ext4
+```
+
+WSL 셸에서:
+
+```bash
+# 마운트 지점 확인 (보통 /mnt/wsl/PHYSICALDRIVE2p1)
+ls /mnt/wsl/
+
+# 로그인 가능한 사용자 확인
+sudo /mnt/.../DDC/tools/jetson/reset_password.sh \
+    --root /mnt/wsl/PHYSICALDRIVE2p1 --list-users
+
+# 새 비번 설정 (권장)
+sudo .../reset_password.sh --root /mnt/wsl/PHYSICALDRIVE2p1 --user nvidia --set '새비번'
+```
+
+작업 후 Windows(관리자 PowerShell)에서 마운트를 해제하고 카드를 뺀다.
+
+```powershell
+wsl --unmount \\.\PHYSICALDRIVE2
+```
+
+카드를 Jetson 에 다시 꽂고 부팅해 새 비번으로 로그인한다.
+
+### 옵션
+
+- `--set '새비번'` — 새 비밀번호 설정 (권장). SHA-512 해시로 저장.
+- `--blank` — 비번 제거(콘솔 무암호). 부팅 후 즉시 `passwd` 로 재설정. SSH 는 막힐 수 있으므로 모니터 콘솔에서 로그인.
+- `--unlock` — 계정 잠금(`!`)만 해제, 기존 해시 유지.
+
+`reset_password.sh` 는 대상이 진짜 루트fs 인지(etc/shadow 존재) 확인하고, 수정 전 `shadow` 를 타임스탬프로 백업하며, 지정한 사용자 행만 건드린다. Jetson 자체 복구(single) 셸에서 루트가 rw 로 마운트돼 있으면 `--root /` 로도 동작한다.
+
 ## 검증 결과
 
 `flash_sd.sh` 는 loop 장치(가짜 SD 카드)로 전 경로를 검증했다.
@@ -135,6 +181,13 @@ sudo apt-get update && sudo apt-get upgrade
 - `shellcheck` 경고 0건
 
 `flash_sd.ps1` 은 Windows PowerShell 5.1+ 기준으로 작성했으며, 실제 Windows 하드웨어에서의 최종 확인이 남아 있다.
+
+`reset_password.sh` 는 가짜 루트 파일시스템(etc/passwd·etc/shadow)으로 검증했다.
+
+- `--set` 새 비번 → 저장된 SHA-512 해시가 입력 비번과 일치 확인
+- `--blank` → 비번 필드 비워짐, `--unlock` → 잠금(`!`) 제거 확인
+- 지정 사용자 행만 변경, 다른 계정 행 무결성 유지, 수정 전 백업 생성
+- 없는 사용자·루트fs 아님 거부, `shellcheck` 경고 0건
 
 ## 참고
 
